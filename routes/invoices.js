@@ -59,10 +59,10 @@ router.post('/', async (req, res, next) => {
             `INSERT INTO invoices (comp_code, amt)
                 VALUES ($1, $2)
                 RETURNING id, comp_code, amt, paid, add_date, paid_date `,
-            [req.body.comp_code, req.body.amt]
+            [comp_code, amt]
         );
 
-        return res.status(201).json({ invoice: result.rows[result.rows.length - 1] });
+        return res.status(201).json({ invoice: result.rows[0] });
 
     } catch(err) {
         return next(err)
@@ -71,17 +71,37 @@ router.post('/', async (req, res, next) => {
 
 router.put('/:id', async (req, res, next) => {
     try {
-        const { amt } = req.body
-        const result = await db.query(
-            `UPDATE invoices 
-                SET amt = $1
-                WHERE id = $2
-                RETURNING id, comp_code, amt, paid, add_date, paid_date`,
-            [req.body.amt, req.params.id]
+        const { amt, paid } = req.body
+        const paidDate = null
+
+        const currInvoice = await db.query(
+            `SELECT paid 
+                FROM invoices
+                WHERE id = $1`,
+            [req.params.id]
         );
-        if (result.rows.length === 0) {
+
+        if (currInvoice.rows.length === 0) {
             throw new ExpressError(`There is no invoice with id of '${req.params.id}`, 404);
         }
+
+        const currPaidDate = currInvoice.rows[0].paid_date
+
+        if (paid && !currPaidDate) {
+            paidDate = new Date()
+        } else if (!paid) {
+            paidDate = null
+        } else {
+            paidDate = currPaidDate
+        }
+
+        const result = await db.query(
+            `UPDATE invoices 
+                SET amt = $1, paid = $2, paid_date = $3
+                WHERE id = $3
+                RETURNING id, comp_code, amt, paid, add_date, paid_date`,
+            [amt, paid, paidDate, req.params.id]
+        );
 
         return res.status(201).json({ invoice: result.rows[0] });
 
@@ -149,6 +169,5 @@ router.get('/companies/:code', async (req, res, next) => {
         return next(err)
     }
 });
-
 
 module.exports = router;
